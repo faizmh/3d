@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kurrah — Street-Level 3D Demo</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css">
+<style>
+  :root{
+    --bg:#04090f; --panel:#0a1420d9; --panel-solid:#0b1622; --line:#1c2e42;
+    --ink:#e8f1f8; --dim:#7f95a8;
+    --liv:#3dff77; --ars:#3ea2ff; --mun:#ff7a45; --mci:#8fe8ff; --neu:#9db2c7;
+    --danger:#ff5468; --gold:#ffd24d;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow:hidden}
+  .hud-label{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);font-weight:600}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  #app{display:grid;grid-template-rows:56px 1fr 84px;height:100vh}
+
+  header{display:flex;align-items:center;gap:18px;padding:0 18px;background:linear-gradient(180deg,#08111c,#060d16);border-bottom:1px solid var(--line);z-index:1002}
+  .logo{display:flex;align-items:center;gap:10px}
+  .logo-mark{width:26px;height:26px;border-radius:7px;background:conic-gradient(from 210deg,#ff2d55,#ff5468 40%,#c81e3a);display:grid;place-items:center;font-weight:800;font-size:14px;color:#fff}
+  .logo b{font-size:17px;letter-spacing:.14em}
+  .logo span{display:block;font-size:8.5px;letter-spacing:.22em;color:var(--dim)}
+  .board-tabs{display:flex;gap:8px;margin-left:8px}
+  .board-tabs button{background:transparent;border:1px solid var(--line);color:var(--dim);padding:6px 14px;border-radius:999px;font-size:11px;letter-spacing:.1em;font-weight:700;cursor:pointer}
+  .board-tabs button.active{border-color:#ff5468;color:#fff;background:#ff546818}
+  header .spacer{flex:1}
+  .stat{text-align:right}
+  .stat .v{font-size:15px;font-weight:700}
+  .stat .v .accent{color:var(--gold)} .stat .v .bolt{color:var(--liv)}
+  .avatar{display:flex;align-items:center;gap:10px;padding-left:16px;border-left:1px solid var(--line)}
+  .avatar .pic{width:34px;height:34px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#3dff77,#0c7a35);border:2px solid #ff2d8d}
+  .avatar b{font-size:13px}.avatar small{display:block;color:var(--dim);font-size:10px}
+
+  #stage{position:relative;overflow:hidden}
+  #lmap{position:absolute;inset:0;background:radial-gradient(1000px 700px at 30% 20%,#0a1a2e,#04090f)}
+  /* keep map controls clear of the right HUD column (they dock just left of it, like the mockup) */
+  .maplibregl-ctrl-bottom-right{right:316px!important;bottom:8px!important}
+  .maplibregl-ctrl-attrib{background:#060d16cc!important;color:#4d6579!important;font-size:9px!important}
+  .maplibregl-ctrl-attrib a{color:#6f8ba3!important}
+  .maplibregl-ctrl-group{background:var(--panel-solid)!important;border:1px solid var(--line)!important;border-radius:10px!important;box-shadow:0 4px 16px #000a!important;overflow:hidden}
+  .maplibregl-ctrl-group button{background:var(--panel-solid)!important;border-bottom:1px solid var(--line)!important;width:34px!important;height:34px!important}
+  .maplibregl-ctrl-group button:last-child{border-bottom:none!important}
+  .maplibregl-ctrl-group button:hover{background:#12233a!important}
+  .maplibregl-ctrl button .maplibregl-ctrl-icon{filter:invert(.9) hue-rotate(160deg)}
+  .cam-btn{font-size:13px;color:var(--ink);font-weight:800;line-height:34px;text-align:center;display:block;width:34px;height:34px;cursor:pointer}
+  .cam-btn:hover{color:var(--liv)}
+
+  /* node HTML labels (billboarded over 3D) */
+  .nlabel{pointer-events:none;text-align:center;line-height:1.15;transform:translateY(-6px)}
+  .nlabel .nm{font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#eaf4fb;text-shadow:0 0 4px #000,0 0 8px #000,0 1px 2px #000}
+  .nlabel .pc{font-size:11.5px;font-weight:900;font-family:var(--mono);text-shadow:0 0 6px #000,0 1px 2px #000}
+  .float-pt{pointer-events:none;font-family:var(--mono);font-size:13px;font-weight:800;text-shadow:0 0 6px #000;animation:rise 1.2s ease-out forwards}
+  @keyframes rise{from{transform:translateY(0);opacity:1}to{transform:translateY(-50px);opacity:0}}
+
+  /* glowing club emblem pinned to the spire perch */
+  #badge-layer{position:absolute;inset:0;pointer-events:none;z-index:999;overflow:hidden}
+  .club-badge{position:absolute;left:0;top:0;width:38px;height:38px;border-radius:50%;border:2px solid #fff;display:grid;place-items:center;
+    background:radial-gradient(circle at 32% 28%,#1d3048,#070f18);cursor:pointer;overflow:hidden;
+    transition:border-color .5s,box-shadow .5s;will-change:transform;transform-origin:50% 100%;pointer-events:auto}
+  .club-badge .code{font-size:10.5px;font-weight:900;letter-spacing:.04em;font-family:var(--mono);position:relative;z-index:2;transition:color .5s}
+  .club-badge .shine{position:absolute;inset:-45%;background:conic-gradient(from 0deg,transparent 0 68%,#ffffff66 78%,transparent 88%);animation:badgespin 3.2s linear infinite}
+  @keyframes badgespin{to{transform:rotate(360deg)}}
+  .club-badge::after{content:'';position:absolute;inset:-3px;border-radius:50%;animation:badgepulse 2.2s ease-in-out infinite}
+  @keyframes badgepulse{0%,100%{box-shadow:0 0 6px 0 currentColor}50%{box-shadow:0 0 18px 3px currentColor}}
+
+  /* panels */
+  .panel{position:absolute;background:var(--panel);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:14px;padding:14px 16px;z-index:1000}
+  #control-panel{top:16px;left:16px;width:212px}
+  #control-panel h4{margin-bottom:10px}
+  .ctl-row{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:4px 0}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .ctl-row .pct{margin-left:auto;font-weight:700}
+  .ctl-bar{height:5px;border-radius:3px;background:#132234;overflow:hidden;display:flex;margin-top:10px}
+  .ctl-bar i{height:100%;transition:width .8s ease}
+
+  #right{position:absolute;top:16px;right:16px;width:288px;display:flex;flex-direction:column;gap:12px;max-height:calc(100% - 32px);z-index:1000}
+  #right .panel{position:relative}
+  .panel h3{font-size:12px;letter-spacing:.14em;font-weight:800}
+  #battle-panel h3{color:var(--liv)}
+  #battle-timer{float:right;color:var(--ink);font-size:12px}
+  .vs-row{display:flex;align-items:center;justify-content:space-between;margin:12px 0 8px}
+  .vs-team{text-align:center}
+  .vs-team .crest{width:34px;height:34px;border-radius:50%;margin:0 auto 4px;display:grid;place-items:center;font-weight:800;font-size:12px}
+  .vs-team small{font-size:9px;letter-spacing:.1em;color:var(--dim);display:block}
+  .vs-team .p{font-size:22px;font-weight:800}
+  .battle-bar{height:7px;border-radius:4px;overflow:hidden;display:flex;background:#132234}
+  .battle-bar i{height:100%;transition:width .8s ease}
+  .battle-meta{display:flex;justify-content:space-between;font-size:10.5px;color:var(--dim);margin-top:8px}
+  .btn{width:100%;margin-top:12px;padding:10px;border-radius:9px;border:1px solid var(--liv);background:#3dff7716;color:var(--liv);font-weight:800;font-size:12px;letter-spacing:.12em;cursor:pointer}
+  .btn:hover{background:#3dff7730}
+
+  #locality-panel .row{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:5px 0;cursor:pointer;border-radius:6px}
+  #locality-panel .row:hover{background:#ffffff08}
+  #locality-panel .row .pct{margin-left:auto;font-weight:700}
+  #locality-panel p.sub{font-size:10.5px;color:var(--dim);margin:2px 0 8px}
+
+  #feed-panel{flex:1;min-height:110px;display:flex;flex-direction:column}
+  #feed{overflow-y:auto;margin-top:8px;flex:1;scrollbar-width:thin}
+  .feed-item{display:flex;gap:10px;font-size:11.5px;padding:6px 0;border-bottom:1px dashed #16283a;animation:fadein .4s ease}
+  .feed-item .t{color:var(--dim);font-size:10px;white-space:nowrap;padding-top:1px;min-width:52px}
+  @keyframes fadein{from{opacity:0;transform:translateY(-4px)}to{opacity:1}}
+  .liv-txt{color:var(--liv);font-weight:700}.ars-txt{color:var(--ars);font-weight:700}
+  .red-txt{color:var(--danger);font-weight:700}.gold-txt{color:var(--gold);font-weight:700}
+  .mci-txt{color:var(--mci);font-weight:700}
+
+  #event-panel{bottom:16px;left:16px;width:250px}
+  #event-panel .ev{display:flex;align-items:center;gap:10px;margin-top:8px}
+  #event-panel .ball{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:14px;background:#16283a}
+  #event-panel b{font-size:12px;color:#ff8a95;letter-spacing:.06em}
+  #event-panel small{display:block;color:var(--dim);font-size:10.5px}
+
+  #tick-pill{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;padding:8px 16px;border-radius:999px;background:var(--panel);border:1px solid var(--line);z-index:1000;font-size:11px}
+  #tick-pill .pulse{width:8px;height:8px;border-radius:50%;background:var(--liv);animation:pulse 1.4s infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 #3dff7760}50%{box-shadow:0 0 0 6px transparent}}
+  #tick-pill b{color:var(--liv)}
+  #zoom-hint{position:absolute;left:50%;bottom:58px;transform:translateX(-50%);padding:6px 14px;border-radius:999px;background:var(--panel);border:1px solid var(--line);z-index:1000;font-size:11px;color:var(--dim)}
+
+  /* maplibre popup restyle */
+  .game-pop .maplibregl-popup-content{background:var(--panel-solid);color:var(--ink);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px #000c;padding:14px 16px;width:250px;font:inherit}
+  .game-pop .maplibregl-popup-tip{border-top-color:var(--panel-solid)!important;border-bottom-color:var(--panel-solid)!important}
+  .game-pop .maplibregl-popup-close-button{color:var(--dim);font-size:16px;right:6px;top:4px}
+  .pop h3{font-size:13px;letter-spacing:.1em}
+  .pop .owner{font-size:11px;margin:4px 0 10px;color:var(--dim)}
+  .inf-row{display:flex;align-items:center;gap:8px;font-size:11.5px;margin:5px 0}
+  .inf-row .bar{flex:1;height:5px;background:#132234;border-radius:3px;overflow:hidden}
+  .inf-row .bar i{display:block;height:100%}
+  .inf-row .v{width:38px;text-align:right;font-family:var(--mono);font-size:11px}
+  .pop .btn{margin-top:10px;padding:9px}
+
+  #actions{display:flex;justify-content:center;gap:10px;align-items:center;border-top:1px solid var(--line);background:linear-gradient(0deg,#060d16,#08111c);padding:0 12px;z-index:1002}
+  .action{width:104px;padding:9px 4px;border-radius:12px;border:1px solid var(--line);background:#0d1926;color:var(--ink);cursor:pointer;text-align:center;transition:transform .1s,border-color .2s}
+  .action:hover{border-color:var(--liv);transform:translateY(-2px)}
+  .action.done{opacity:.45;pointer-events:none}
+  .action .ico{font-size:17px}
+  .action .nm{font-size:10.5px;font-weight:700;margin-top:2px}
+  .action .rw{font-size:10px;color:var(--liv);font-weight:800}
+  .action small{display:block;font-size:8.5px;color:var(--dim);letter-spacing:.08em}
+  #modal-back{position:fixed;inset:0;background:#020609cc;display:none;place-items:center;z-index:2000}
+  #modal{width:min(400px,92vw);background:var(--panel-solid);border:1px solid var(--line);border-radius:16px;padding:22px}
+  #modal h3{font-size:14px;letter-spacing:.1em;margin-bottom:4px}
+  #modal p.q{font-size:14px;margin:12px 0 14px;line-height:1.45}
+  .opt{display:block;width:100%;text-align:left;padding:11px 14px;margin:7px 0;border-radius:10px;border:1px solid var(--line);background:#0d1926;color:var(--ink);font-size:13px;cursor:pointer}
+  .opt:hover{border-color:var(--liv)}
+  .opt.correct{border-color:var(--liv);background:#3dff7720}
+  .opt.wrong{border-color:var(--danger);background:#ff546820}
+  #toast{position:fixed;top:70px;left:50%;transform:translateX(-50%) translateY(-10px);background:#0d1c2c;border:1px solid var(--liv);color:var(--liv);padding:9px 18px;border-radius:999px;font-size:12.5px;font-weight:700;opacity:0;transition:.3s;z-index:3000;pointer-events:none}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  @media (max-width:900px){
+    #control-panel,#event-panel{display:none}
+    #right{width:236px}
+    .maplibregl-ctrl-bottom-right{right:264px!important}
+    .action{width:86px}
+    header .stat.hide-m{display:none}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo"><div class="logo-mark">✕</div><div><b>KURRAH</b><span>CONQUER KERALA. TOGETHER.</span></div></div>
+    <div class="board-tabs">
+      <button class="active">⚽ CLUB MAP</button>
+      <button onclick="toast('World Cup board activates during tournament windows')">🏆 WORLD CUP MAP</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="stat hide-m"><div class="hud-label">Season 1</div><div class="v num"><span class="accent">23</span> days left</div></div>
+    <div class="stat"><div class="hud-label">Influence</div><div class="v num"><span class="bolt">⚡</span> <span id="hud-influence">12,450</span></div></div>
+    <div class="avatar"><div class="pic"></div><div><b>YNWA</b><small>Liverpool · Level 18</small></div></div>
+  </header>
+
+  <div id="stage">
+    <div id="lmap"></div>
+    <div id="badge-layer"></div>
+
+    <div class="panel" id="control-panel">
+      <h4 class="hud-label">Controlled by</h4>
+      <div id="ctl-rows"></div>
+      <div class="ctl-bar" id="ctl-bar"></div>
+    </div>
+
+    <div id="right">
+      <div class="panel" id="battle-panel">
+        <h3>BATTLE FOR PATTOM <span id="battle-timer" class="num">02:18:47</span></h3>
+        <div class="vs-row">
+          <div class="vs-team"><div class="crest" style="background:#3dff7722;border:1px solid var(--liv);color:var(--liv)">LFC</div><small>LIVERPOOL</small><div class="p num" style="color:var(--liv)" id="battle-liv">72%</div></div>
+          <div class="hud-label">vs</div>
+          <div class="vs-team"><div class="crest" style="background:#3ea2ff22;border:1px solid var(--ars);color:var(--ars)">AFC</div><small>ARSENAL</small><div class="p num" style="color:var(--ars)" id="battle-ars">28%</div></div>
+        </div>
+        <div class="battle-bar"><i id="bar-liv" style="background:var(--liv);width:72%"></i><i id="bar-ars" style="background:var(--ars);width:28%"></i></div>
+        <div class="battle-meta"><span>👥 You and <span id="battle-others" class="num">320</span> others</span><span>⚡ <span class="num" id="battle-need">589</span> to win</span></div>
+        <button class="btn" onclick="act('defend')">⚔ DEFEND PATTOM &nbsp;+25</button>
+      </div>
+
+      <div class="panel" id="locality-panel">
+        <h3>LOCALITY STATUS</h3>
+        <p class="sub">Tap a locality to fly there</p>
+        <div id="loc-rows"></div>
+      </div>
+
+      <div class="panel" id="feed-panel">
+        <h3>RECENT ACTIVITY</h3>
+        <div id="feed"></div>
+      </div>
+    </div>
+
+    <div class="panel" id="event-panel">
+      <div class="hud-label">Next event <span class="num" style="float:right;color:var(--ink)">1D 08H 34M</span></div>
+      <div class="ev"><div class="ball">🔥</div><div><b>NORTH LONDON DERBY</b><small>Earn 2× Influence on predictions</small></div></div>
+    </div>
+
+    <div id="zoom-hint">🎮 Drag with right-click (or two fingers) to tilt & orbit the city</div>
+    <div id="tick-pill"><span class="pulse"></span> LIVE · Next territory tick in <b class="num" id="tick-timer">0:20</b></div>
+  </div>
+
+  <div id="actions">
+    <button class="action" id="a-checkin" onclick="act('checkin')"><div class="ico">📍</div><div class="nm">Check-in</div><div class="rw">+5</div><small>DAILY</small></button>
+    <button class="action" onclick="openPredict()"><div class="ico">🎯</div><div class="nm">Predict</div><div class="rw">+20</div><small>NEXT MATCH</small></button>
+    <button class="action" onclick="openQuiz()"><div class="ico">❓</div><div class="nm">Quiz</div><div class="rw">+15</div><small>DAILY</small></button>
+    <button class="action" onclick="act('invite')"><div class="ico">👥</div><div class="nm">Invite</div><div class="rw">+100</div><small>FRIENDS</small></button>
+    <button class="action" onclick="act('watch')"><div class="ico">▶️</div><div class="nm">Watch</div><div class="rw">+50</div><small>LIVE MATCH</small></button>
+    <button class="action" onclick="act('redeem')"><div class="ico">🎁</div><div class="nm">Redeem</div><div class="rw">+30</div><small>MERCHANT</small></button>
+  </div>
+</div>
+
+<div id="modal-back"><div id="modal"></div></div>
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
+<script>
+/* ================= GAME STATE ================= */
+const TEAMS = {
+  liv:{name:'Liverpool', color:'#3dff77'},
+  ars:{name:'Arsenal',   color:'#3ea2ff'},
+  mun:{name:'Man United',color:'#ff7a45'},
+  mci:{name:'Man City',  color:'#8fe8ff'},
+  neu:{name:'Neutral',   color:'#9db2c7'}
+};
+const nodes = [
+  {id:'kzk', name:'Kazhakkoottam',      lat:8.5666, lng:76.8720, inf:{liv:640,ars:180,mun:90, mci:50}, w:3},
+  {id:'tvm', name:'Thiruvananthapuram', lat:8.5069, lng:76.9570, inf:{liv:310,ars:260,mun:120,mci:80}, w:5},
+  {id:'kow', name:'Kowdiar',            lat:8.5241, lng:76.9542, inf:{liv:680,ars:210,mun:60, mci:40}, w:2},
+  {id:'pat', name:'Pattom',             lat:8.5245, lng:76.9366, inf:{liv:720,ars:280,mun:0,  mci:0 }, w:3, home:true},
+  {id:'vel', name:'Vellayambalam',      lat:8.5100, lng:76.9640, inf:{liv:180,ars:520,mun:70, mci:60}, w:2},
+  {id:'sta', name:'Statue',             lat:8.4855, lng:76.9470, inf:{liv:140,ars:480,mun:110,mci:90}, w:2},
+  {id:'pul', name:'Pulimoodu',          lat:8.4900, lng:76.9515, inf:{liv:210,ars:410,mun:90, mci:70}, w:1},
+  {id:'att', name:'Attingal',           lat:8.6963, lng:76.8163, inf:{liv:350,ars:300,mun:120,mci:60}, w:1},
+  {id:'var', name:'Varkala',            lat:8.7379, lng:76.7163, inf:{liv:520,ars:250,mun:100,mci:70}, w:2},
+  {id:'nem', name:'Nemom',              lat:8.4410, lng:76.9890, inf:{liv:150,ars:160,mun:140,mci:130},w:1}
+];
+const edges = [['kzk','tvm'],['kzk','kow'],['kzk','att'],['tvm','kow'],['tvm','vel'],['kow','pat'],
+  ['pat','tvm'],['pat','vel'],['pat','sta'],['vel','sta'],['pul','sta'],['pul','tvm'],
+  ['att','var'],['att','pat'],['var','kzk'],['sta','nem'],['pul','nem']];
+
+let playerInfluence = 12450;
+let selected = 'pat';
+let tickSecs = 20, battleSecs = 2*3600+18*60+47, battleNeed = 589, battleOthers = 320;
+const doneOnce = {};
+nodes.forEach(n=>{ n.dispH = 0; });   /* animated tower height */
+
+/* ================= HELPERS ================= */
+const $ = id => document.getElementById(id);
+const fmt = n => n.toLocaleString('en-IN');
+function ownerOf(n){
+  let best='neu',bv=0,total=0;
+  for(const t in n.inf){ total+=n.inf[t]; if(n.inf[t]>bv){bv=n.inf[t];best=t;} }
+  return {team: bv<60?'neu':best, pct: total? Math.round(bv/total*100):0, total};
+}
+const towerH = n => Math.min(520, 50 + ownerOf(n).total*0.32);   /* metres */
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._x); t._x=setTimeout(()=>t.classList.remove('show'),2600); }
+function feed(html){
+  const d=document.createElement('div'); d.className='feed-item';
+  d.innerHTML=`<span class="t">just now</span><span>${html}</span>`;
+  $('feed').prepend(d);
+  const items=$('feed').children; if(items.length>14) items[items.length-1].remove();
+}
+/* diamond & square footprints around a point (radius in metres) */
+function diamond(n, r){
+  const dLat=r/111320, dLng=r/(111320*Math.cos(n.lat*Math.PI/180));
+  return [[ [n.lng, n.lat+dLat],[n.lng+dLng, n.lat],[n.lng, n.lat-dLat],[n.lng-dLng, n.lat],[n.lng, n.lat+dLat] ]];
+}
+function squareFP(n, r){
+  const dLat=r/111320, dLng=r/(111320*Math.cos(n.lat*Math.PI/180));
+  return [[ [n.lng-dLng,n.lat+dLat],[n.lng+dLng,n.lat+dLat],[n.lng+dLng,n.lat-dLat],[n.lng-dLng,n.lat-dLat],[n.lng-dLng,n.lat+dLat] ]];
+}
+function shade(hex,f){
+  const v=parseInt(hex.slice(1),16);
+  const c=i=>Math.min(255,Math.max(0,Math.round(((v>>i)&255)*f)));
+  return `rgb(${c(16)},${c(8)},${c(0)})`;
+}
+
+/* ================= 3D MAP ================= */
+const STYLE_URL='https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+const fallbackStyle={version:8,name:'fallback',sources:{},layers:[{id:'bg',type:'background',paint:{'background-color':'#050e18'}}]};
+let map, popupRef=null, popupNode=null, orbiting=false;
+
+fetch(STYLE_URL).then(r=>r.json()).then(initMap).catch(()=>{ initMap(fallbackStyle); setTimeout(()=>toast('Street basemap blocked in this sandbox — showing towers on embedded Kerala board'),1500); });
+
+function initMap(style){
+  map = new maplibregl.Map({
+    container:'lmap', style,
+    center:[76.3,10.4], zoom:7.2, pitch:0, bearing:0,
+    maxPitch:70, antialias:true, attributionControl:{compact:true}
+  });
+  map.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'bottom-right');
+
+  /* custom camera buttons */
+  const camCtl={onAdd(){ const d=document.createElement('div'); d.className='maplibregl-ctrl maplibregl-ctrl-group';
+    d.innerHTML=`<span class="cam-btn" title="Street-level game camera (Pattom)">🏙</span>
+                 <span class="cam-btn" title="Tactical overview (Trivandrum)" style="font-size:11px">◆</span>
+                 <span class="cam-btn" title="All Kerala" style="font-size:11px">KL</span>`;
+    const [street,tact,kl]=d.querySelectorAll('.cam-btn');
+    street.onclick=()=>streetView('pat');
+    tact.onclick=()=>{ stopOrbit(); map.flyTo({center:[76.945,8.512],zoom:12.6,pitch:45,bearing:-15,duration:1800}); };
+    kl.onclick=()=>{ stopOrbit(); map.flyTo({center:[76.3,10.4],zoom:7.2,pitch:0,bearing:0,duration:1800}); };
+    return d; }, onRemove(){}};
+  map.addControl(camCtl,'bottom-right');
+
+  map.on('load', ()=>{
+    /* Kerala boundary (embedded — always works, even offline) */
+    map.addSource('kerala',{type:'geojson',data:{type:'Feature',geometry:{type:'Polygon',coordinates:[[
+      [74.88,12.75],[75.00,12.45],[75.10,12.20],[75.23,11.90],[75.38,11.70],[75.58,11.45],
+      [75.72,11.25],[75.83,11.05],[75.92,10.78],[76.02,10.60],[76.13,10.35],[76.19,10.15],
+      [76.23,9.97],[76.30,9.65],[76.38,9.30],[76.48,9.00],[76.65,8.75],[76.88,8.52],
+      [77.02,8.38],[77.12,8.29],[77.25,8.32],[77.28,8.50],[77.20,8.75],[77.10,9.00],
+      [77.26,9.30],[77.18,9.60],[77.10,9.90],[77.22,10.10],[77.10,10.22],[76.90,10.35],
+      [76.88,10.60],[76.78,10.72],[76.90,10.78],[76.85,10.90],[76.74,11.10],[76.52,11.25],
+      [76.35,11.50],[76.22,11.70],[75.98,11.95],[75.80,12.10],[75.55,12.30],[75.25,12.55],
+      [74.88,12.75]]]}}});
+    map.addLayer({id:'kerala-fill',type:'fill',source:'kerala',paint:{'fill-color':'#0a1826','fill-opacity': style===fallbackStyle?0.55:0.10}});
+    map.addLayer({id:'kerala-line',type:'line',source:'kerala',paint:{'line-color':'#2c5a82','line-width':2,'line-opacity':.85}});
+
+    /* faction zones (ground glow) */
+    map.addSource('zones',{type:'geojson',data:emptyFC()});
+    map.addLayer({id:'zones',type:'circle',source:'zones',paint:{
+      'circle-pitch-alignment':'map',
+      'circle-radius':['interpolate',['linear'],['zoom'],9,6,12,26,15,120,17,340],
+      'circle-color':['get','col'],'circle-opacity':.10,
+      'circle-stroke-color':['get','col'],'circle-stroke-opacity':.25,'circle-stroke-width':1}});
+
+    /* node links */
+    map.addSource('links',{type:'geojson',data:emptyFC()});
+    map.addLayer({id:'links',type:'line',source:'links',paint:{
+      'line-color':['get','col'],'line-width':['case',['get','same'],1.8,1],
+      'line-opacity':['case',['get','same'],.55,.28]}});
+
+    /* (real rectangular building extrusions removed — game spires own the skyline) */
+
+    /* ==== GAME TOWERS: segmented sci-fi spires, single fully-opaque layer (no z-fighting possible) ==== */
+    map.addSource('towers',{type:'geojson',data:emptyFC()});
+    map.addLayer({id:'towers',type:'fill-extrusion',source:'towers',paint:{
+      'fill-extrusion-color':['get','col'],
+      'fill-extrusion-height':['get','h'],
+      'fill-extrusion-base':['get','b'],
+      'fill-extrusion-opacity':1,
+      'fill-extrusion-vertical-gradient':true}});
+    /* capture the camera matrix every frame (supported custom-layer API) for exact 3D→screen badge projection */
+    map.addLayer({id:'mvp-capture',type:'custom',renderingMode:'3d',onAdd(){},render(gl,matrix){ MVP=matrix; }});
+
+    /* selection ring + overview dots */
+    map.addSource('pts',{type:'geojson',data:emptyFC()});
+    map.addLayer({id:'sel-ring',type:'circle',source:'pts',filter:['==',['get','id'],selected],paint:{
+      'circle-pitch-alignment':'map','circle-radius':['interpolate',['linear'],['zoom'],10,10,14,34,17,90],
+      'circle-color':'transparent','circle-stroke-color':'#ffffff','circle-stroke-opacity':.5,'circle-stroke-width':1.2}});
+    map.addLayer({id:'node-dots',type:'circle',source:'pts',maxzoom:11.5,paint:{
+      'circle-pitch-alignment':'map','circle-radius':['+',['*',['get','w'],1.6],4],
+      'circle-color':['get','col'],'circle-stroke-color':'#ffffff','circle-stroke-width':1,'circle-stroke-opacity':.5}});
+
+    /* clicks on towers / dots */
+    ['towers','node-dots'].forEach(l=>{
+      map.on('click',l,e=>{ const id=e.features[0].properties.id; selected=id; openNodePopup(id); renderAll(); });
+      map.on('mouseenter',l,()=>map.getCanvas().style.cursor='pointer');
+      map.on('mouseleave',l,()=>map.getCanvas().style.cursor='');
+    });
+    ['mousedown','wheel','touchstart'].forEach(ev=>map.getCanvas().addEventListener(ev,stopOrbit,{passive:true}));
+
+    buildLabels();
+    buildBadges();
+    renderAll();
+    startTween();
+
+    /* cinematic: Kerala → dive to street-level Pattom with orbit */
+    setTimeout(()=>streetView('pat',3800),1000);
+  });
+}
+const emptyFC=()=>({type:'FeatureCollection',features:[]});
+
+/* street-level game camera with slow orbit */
+function streetView(id,dur=2200){
+  const n=nodes.find(x=>x.id===id);
+  stopOrbit();
+  map.flyTo({center:[n.lng+0.0015,n.lat-0.001],zoom:15.6,pitch:64,bearing:20,duration:dur,essential:true});
+  map.once('moveend',()=>{ orbiting=true; orbit(); });
+}
+function orbit(){
+  if(!orbiting) return;
+  map.setBearing(map.getBearing()+0.06);
+  requestAnimationFrame(orbit);
+}
+function stopOrbit(){ orbiting=false; }
+
+/* ================= LABEL MARKERS ================= */
+const labelRefs={};
+function buildLabels(){
+  nodes.forEach(n=>{
+    const el=document.createElement('div'); el.className='nlabel';
+    el.innerHTML=`<div class="nm">${n.name}${n.home?' ⌂':''}</div><div class="pc"></div>`;
+    new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat([n.lng,n.lat]).addTo(map);
+    labelRefs[n.id]=el.querySelector('.pc');
+  });
+}
+
+/* ===== club emblem beacons pinned to the perch of each spire =====
+   Uses the exact camera matrix captured from the custom layer, so the badge
+   tracks the 3D perch perfectly through pans, tilts, orbits and zooms.
+   Note: stylised monograms for the demo — official club crests are licensed IP
+   and would be dropped in through club partnerships in production. */
+let MVP=null;
+const TEAM_CODE={liv:'LFC',ars:'AFC',mun:'MUN',mci:'MCI'};
+const badgeRefs={};
+function buildBadges(){
+  const layer=$('badge-layer');
+  nodes.forEach(n=>{
+    const el=document.createElement('div'); el.className='club-badge';
+    el.innerHTML=`<i class="shine"></i><span class="code"></span>`;
+    el.addEventListener('click',()=>{ selected=n.id; openNodePopup(n.id); renderAll(); });
+    layer.appendChild(el);
+    badgeRefs[n.id]={el,code:el.querySelector('.code'),hidden:false};
+  });
+  map.on('render',updateBadgeOffsets);
+}
+/* exact 3D world point (lng, lat, altitude in metres) → screen pixels */
+function project3D(lng,lat,alt){
+  if(!MVP) return null;
+  const mc=maplibregl.MercatorCoordinate.fromLngLat([lng,lat],alt);
+  const X=mc.x, Y=mc.y, Z=mc.z, m=MVP;
+  const w=m[3]*X+m[7]*Y+m[11]*Z+m[15];
+  if(w<=0) return null;                      /* behind the camera */
+  const x=(m[0]*X+m[4]*Y+m[8]*Z+m[12])/w;
+  const y=(m[1]*X+m[5]*Y+m[9]*Z+m[13])/w;
+  const c=map.getCanvas();
+  return [(x*0.5+0.5)*c.clientWidth,(0.5-y*0.5)*c.clientHeight];
+}
+function updateBadgeOffsets(){
+  if(!map) return;
+  const z=map.getZoom();
+  nodes.forEach(n=>{
+    const b=badgeRefs[n.id]; if(!b) return;
+    if(b.hidden || z<11.5){ b.el.style.display='none'; return; }
+    const hh=Math.max(70,n.dispH);
+    const p=project3D(n.lng,n.lat,hh*.9);   /* centre of the glowing beacon head */
+    if(!p){ b.el.style.display='none'; return; }
+    b.el.style.display='grid';
+    const s=Math.min(1,.55+(z-11.5)*.12);
+    b.el.style.transform=`translate(${p[0].toFixed(1)}px,${p[1].toFixed(1)}px) translate(-50%,-50%) scale(${s.toFixed(2)})`;
+  });
+}
+function floatPts(n,txt,color){
+  const el=document.createElement('div'); el.className='float-pt'; el.textContent=txt; el.style.color=color;
+  const m=new maplibregl.Marker({element:el,anchor:'bottom',offset:[0,-40]}).setLngLat([n.lng,n.lat]).addTo(map);
+  setTimeout(()=>m.remove(),1250);
+}
+
+/* ================= RENDER (data-driven layers) ================= */
+function towersFC(){
+  const feats=[];
+  const seg=(n,geom,b,h,col)=>feats.push({type:'Feature',properties:{id:n.id,col,b,h},geometry:{type:'Polygon',coordinates:geom}});
+  const at=(n,dxm,dym)=>({lat:n.lat+dym/111320, lng:n.lng+dxm/(111320*Math.cos(n.lat*Math.PI/180))});
+  nodes.forEach(n=>{
+    const o=ownerOf(n), col=TEAMS[o.team].color;
+    const bright=shade(col,1.55), dark=shade(col,.42), mid=shade(col,.8);
+    const r=60+n.w*22, h=Math.max(70,n.dispH);
+    /* landing platform at street level */
+    seg(n, diamond(n,r*1.75), 0, 5,  dark);
+    seg(n, diamond(n,r*1.30), 0, 11, shade(col,.6));
+    /* slender central mast with lit collar rings */
+    seg(n, diamond(n,r*.17), 8,     h*.86, col);
+    seg(n, diamond(n,r*.24), h*.34, h*.36, bright);
+    seg(n, diamond(n,r*.22), h*.60, h*.62, bright);
+    /* four splayed buttress legs — stepped segments that lean into the mast as they climb */
+    const STEPS=6, D0=r*1.18, D1=r*.16, LT=h*.58, LB=10;
+    [[1,1],[1,-1],[-1,-1],[-1,1]].forEach(([sx,sy])=>{
+      for(let i=0;i<STEPS;i++){
+        const t0=i/STEPS, t1=(i+1)/STEPS;
+        const d=(D0+(D1-D0)*(t0+t1)/2)*0.7071;
+        const c=at(n, sx*d, sy*d);
+        const lr=r*(.17 - t0*.06);
+        seg(n, squareFP(c,lr), LB+(LT-LB)*t0, LB+(LT-LB)*t1 + h*.015, dark);
+      }
+    });
+    /* beacon head: housing + glowing emblem band + roof, then the antenna spike */
+    seg(n, diamond(n,r*.30), h*.84,  h*.95,  mid);
+    seg(n, diamond(n,r*.38), h*.87,  h*.925, bright);
+    seg(n, diamond(n,r*.18), h*.95,  h*.985, dark);
+    seg(n, squareFP(n,Math.max(5,r*.045)), h*.985, h+85, bright);
+  });
+  return {type:'FeatureCollection',features:feats};
+}
+function ptsFC(){
+  return {type:'FeatureCollection',features:nodes.map(n=>{
+    const o=ownerOf(n);
+    return {type:'Feature',properties:{id:n.id,w:n.w,col:TEAMS[o.team].color},geometry:{type:'Point',coordinates:[n.lng,n.lat]}};
+  })};
+}
+function zonesFC(){
+  return {type:'FeatureCollection',features:nodes.filter(n=>ownerOf(n).team!=='neu').map(n=>{
+    const o=ownerOf(n);
+    return {type:'Feature',properties:{col:TEAMS[o.team].color},geometry:{type:'Point',coordinates:[n.lng,n.lat]}};
+  })};
+}
+function linksFC(){
+  return {type:'FeatureCollection',features:edges.map(([a,b])=>{
+    const na=nodes.find(n=>n.id===a), nb=nodes.find(n=>n.id===b);
+    const oa=ownerOf(na).team, ob=ownerOf(nb).team, same=oa===ob&&oa!=='neu';
+    return {type:'Feature',properties:{same,col:same?TEAMS[oa].color:'#5a7188'},geometry:{type:'LineString',coordinates:[[na.lng,na.lat],[nb.lng,nb.lat]]}};
+  })};
+}
+function renderMap(){
+  if(!map||!map.getSource('towers')) return;
+  map.getSource('towers').setData(towersFC());
+  map.getSource('pts').setData(ptsFC());
+  map.getSource('zones').setData(zonesFC());
+  map.getSource('links').setData(linksFC());
+  map.setFilter('sel-ring',['==',['get','id'],selected]);
+  nodes.forEach(n=>{
+    const o=ownerOf(n), col=TEAMS[o.team].color;
+    const L=labelRefs[n.id]; if(L){ L.textContent=o.team==='neu'?'—':'+'+o.pct+'%'; L.style.color=col; }
+    const B=badgeRefs[n.id];
+    if(B){
+      B.hidden = o.team==='neu';
+      if(!B.hidden){
+        B.code.textContent=TEAM_CODE[o.team];
+        B.code.style.color=col;
+        B.el.style.borderColor=col;
+        B.el.style.color=col;                 /* drives the pulsing halo */
+        B.el.style.boxShadow=`0 0 14px ${col},0 0 34px ${col}66`;
+      }
+    }
+  });
+  updateBadgeOffsets();
+}
+/* smooth tower-height tween loop */
+function startTween(){
+  (function loop(){
+    let moving=false;
+    nodes.forEach(n=>{
+      const target=towerH(n), d=target-n.dispH;
+      if(Math.abs(d)>0.6){ n.dispH+=d*0.09; moving=true; } else n.dispH=target;
+    });
+    if(moving && map && map.getSource('towers')){ map.getSource('towers').setData(towersFC()); updateBadgeOffsets(); }
+    requestAnimationFrame(loop);
+  })();
+}
+
+/* ================= POPUP ================= */
+function popupHTML(n){
+  const o=ownerOf(n);
+  const max=Math.max(...Object.values(n.inf),1);
+  const bars=Object.entries(n.inf).filter(([,v])=>v>1).sort((a,b)=>b[1]-a[1]).map(([t,v])=>`
+    <div class="inf-row"><span class="dot" style="background:${TEAMS[t].color}"></span>
+      <span style="width:72px">${TEAMS[t].name}</span>
+      <span class="bar"><i style="background:${TEAMS[t].color};width:${v/max*100}%"></i></span>
+      <span class="v">${Math.round(v)}</span></div>`).join('');
+  return `<div class="pop">
+    <h3>${n.name.toUpperCase()}</h3>
+    <div class="owner">Controlled by <b style="color:${TEAMS[o.team].color}">${TEAMS[o.team].name}</b> · weight ×${n.w} · tower ${Math.round(towerH(n))}m${n.home?' · <span class="gold-txt">HOME</span>':''}</div>
+    ${bars}
+    <button class="btn" onclick="pushInfluence('${n.id}')">${o.team==='liv'?'🛡 DEFEND NODE +25':'⚡ ATTACK NODE +25'}</button>
+  </div>`;
+}
+function openNodePopup(id){
+  const n=nodes.find(x=>x.id===id);
+  if(popupRef) popupRef.remove();
+  popupNode=id;
+  popupRef=new maplibregl.Popup({offset:20,className:'game-pop'})
+    .setLngLat([n.lng,n.lat]).setHTML(popupHTML(n)).addTo(map);
+  popupRef.on('close',()=>{ popupNode=null; });
+}
+
+/* ================= HUD ================= */
+function renderControl(){
+  const share={liv:0,ars:0,mun:0,mci:0,neu:0}; let W=0;
+  nodes.forEach(n=>{ share[ownerOf(n).team]+=n.w; W+=n.w; });
+  const rows=Object.entries(share).filter(([t,v])=> t!=='neu'?true:v>0).sort((a,b)=>b[1]-a[1]);
+  $('ctl-rows').innerHTML=rows.map(([t,v])=>`
+    <div class="ctl-row"><span class="dot" style="background:${TEAMS[t].color}"></span>
+    ${t==='neu'?'Others':TEAMS[t].name}<span class="pct num">${Math.round(v/W*100)}%</span></div>`).join('');
+  $('ctl-bar').innerHTML=rows.map(([t,v])=>`<i style="background:${TEAMS[t].color};width:${v/W*100}%"></i>`).join('');
+}
+function renderLocalities(){
+  const sorted=[...nodes].sort((a,b)=>ownerOf(b).pct-ownerOf(a).pct).slice(0,6);
+  $('loc-rows').innerHTML=sorted.map(n=>{
+    const o=ownerOf(n);
+    return `<div class="row" onclick="flyToNode('${n.id}')">
+      <span class="dot" style="background:${TEAMS[o.team].color}"></span>${n.name}
+      <span class="pct num" style="color:${TEAMS[o.team].color}">${o.pct}%</span></div>`;
+  }).join('');
+}
+function flyToNode(id){ selected=id; streetView(id,1600); setTimeout(()=>openNodePopup(id),1700); renderAll(); }
+function renderBattle(){
+  const p=nodes.find(n=>n.id==='pat');
+  const liv=p.inf.liv, ars=p.inf.ars, tot=liv+ars;
+  const lp=Math.round(liv/tot*100), ap=100-lp;
+  $('battle-liv').textContent=lp+'%'; $('battle-ars').textContent=ap+'%';
+  $('bar-liv').style.width=lp+'%'; $('bar-ars').style.width=ap+'%';
+  $('battle-need').textContent=fmt(Math.max(0,Math.round(battleNeed)));
+  $('battle-others').textContent=fmt(battleOthers);
+}
+function renderAll(){
+  renderMap(); renderControl(); renderLocalities(); renderBattle();
+  if(popupRef && popupNode) popupRef.setHTML(popupHTML(nodes.find(n=>n.id===popupNode)));
+}
+
+/* ================= ACTIONS ================= */
+function gain(amount, nodeId, label){
+  playerInfluence+=amount;
+  $('hud-influence').textContent=fmt(playerInfluence);
+  const n=nodes.find(x=>x.id===(nodeId||selected));
+  n.inf.liv+=amount*3;
+  if(n.id==='pat') battleNeed-=amount*3;
+  floatPts(n,'+'+(amount*3)+' ⚡','#3dff77');
+  toast(`${label}  ·  +${amount} influence pushed to ${n.name}`);
+  feed(`<span class="liv-txt">You</span> earned +${amount} — boosting <b>${n.name}</b>`);
+  renderAll();
+}
+function pushInfluence(id){ selected=id; act('push'); }
+function act(kind){
+  const mapA={checkin:[5,'Daily check-in ✅'],invite:[100,'Friend invited 👥'],watch:[50,'Watching live match ▶️'],redeem:[30,'Merchant reward scanned 🎁'],defend:[25,'Defending Pattom ⚔'],push:[25,'Influence pushed ⚡']};
+  const [amt,label]=mapA[kind];
+  if(kind==='checkin'){
+    if(doneOnce.checkin){ toast('Check-in already claimed today'); return; }
+    doneOnce.checkin=true; $('a-checkin').classList.add('done');
+  }
+  gain(amt, kind==='defend'?'pat':null, label);
+}
+
+/* ================= QUIZ & PREDICT ================= */
+function openModal(html){ $('modal').innerHTML=html; $('modal-back').style.display='grid'; }
+function closeModal(){ $('modal-back').style.display='none'; }
+$('modal-back').addEventListener('click',e=>{ if(e.target.id==='modal-back') closeModal(); });
+function openQuiz(){
+  if(doneOnce.quiz){ toast('Daily quiz already completed'); return; }
+  openModal(`
+    <div class="hud-label">Daily quiz · +15 ⚡</div><h3>FOOTBALL IQ</h3>
+    <p class="q">Which club has won the most European Cup / Champions League titles?</p>
+    <button class="opt" onclick="quizAnswer(this,false)">Liverpool</button>
+    <button class="opt" onclick="quizAnswer(this,true)">Real Madrid</button>
+    <button class="opt" onclick="quizAnswer(this,false)">Bayern Munich</button>
+    <button class="opt" onclick="quizAnswer(this,false)">AC Milan</button>`);
+}
+function quizAnswer(btn,ok){
+  document.querySelectorAll('.opt').forEach(o=>o.style.pointerEvents='none');
+  btn.classList.add(ok?'correct':'wrong');
+  doneOnce.quiz=true;
+  setTimeout(()=>{ closeModal();
+    if(ok) gain(15,null,'Quiz correct ❓');
+    else { toast('Wrong answer — no influence this time'); feed('You missed the daily quiz question 😅'); }
+  },700);
+}
+function openPredict(){
+  if(doneOnce.predict){ toast('Prediction already locked for this match'); return; }
+  openModal(`
+    <div class="hud-label">North London Derby · 2× event</div><h3>MATCH PREDICTION · +20 ⚡</h3>
+    <p class="q">Arsenal vs Tottenham — who wins?</p>
+    <button class="opt" onclick="lockPredict('Arsenal win')">Arsenal win</button>
+    <button class="opt" onclick="lockPredict('Draw')">Draw</button>
+    <button class="opt" onclick="lockPredict('Tottenham win')">Tottenham win</button>
+    <p style="font-size:10.5px;color:var(--dim);margin-top:10px">Locks at kickoff · settles at full time · correct score pays +50</p>`);
+}
+function lockPredict(pick){
+  doneOnce.predict=true; closeModal();
+  gain(20,null,`Prediction locked: ${pick} 🎯`);
+  feed(`Your derby prediction is <b>locked</b> — settles at full time (2× event)`);
+}
+
+/* ================= GAME TICK ================= */
+const rivalMoves = [
+  ()=>{ bump('vel','ars',60); feed(`<span class="ars-txt">Arsenal</span> is pushing <b>Vellayambalam</b>`); },
+  ()=>{ bump('pul','ars',70); feed(`<span class="ars-txt">Arsenal</span> is attacking <b>Pulimoodu</b>`); },
+  ()=>{ bump('pat','ars',90); battleNeed+=90; feed(`<span class="ars-txt">Arsenal</span> raid on <b>Pattom</b> · defence needed!`); },
+  ()=>{ bump('att','mun',80); feed(`<span class="red-txt">Man United</span> moves on <b>Attingal</b>`); },
+  ()=>{ bump('nem','mci',85); feed(`<span class="mci-txt">Man City</span> contests <b>Nemom</b>`); },
+  ()=>{ bump('kzk','liv',70); feed(`<span class="liv-txt">Liverpool</span> reinforces <b>Kazhakkoottam</b>`); },
+  ()=>{ bump('var','liv',60); feed(`<span class="liv-txt">Liverpool</span> rallies at <b>Varkala</b> watch party 🎉`); }
+];
+function bump(id,team,amt){ nodes.find(n=>n.id===id).inf[team]+=amt; }
+function gameTick(){
+  nodes.forEach(n=>{ for(const t in n.inf) n.inf[t]*=0.96; });
+  const prev=Object.fromEntries(nodes.map(n=>[n.id, ownerOf(n).team]));
+  rivalMoves[Math.floor(Math.random()*rivalMoves.length)]();
+  if(Math.random()>.5) rivalMoves[Math.floor(Math.random()*rivalMoves.length)]();
+  battleOthers += Math.floor(Math.random()*9)-2;
+  nodes.forEach(n=>{
+    const now=ownerOf(n).team;
+    if(now!==prev[n.id] && now!=='neu'){
+      feed(`<b style="color:${TEAMS[now].color}">${TEAMS[now].name}</b> captured <b>${n.name}</b>${prev[n.id]!=='neu'?` from ${TEAMS[prev[n.id]].name}`:''} 🚩`);
+      toast(`Territory tick: ${TEAMS[now].name} captured ${n.name}`);
+      floatPts(n,'CAPTURED',TEAMS[now].color);
+    }
+  });
+  renderAll();
+}
+
+/* ================= TIMERS & BOOT ================= */
+setInterval(()=>{
+  tickSecs--; if(tickSecs<0){ tickSecs=20; gameTick(); }
+  $('tick-timer').textContent='0:'+String(tickSecs).padStart(2,'0');
+  battleSecs--;
+  const h=Math.floor(battleSecs/3600),m=Math.floor(battleSecs%3600/60),s=battleSecs%60;
+  $('battle-timer').textContent=`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+},1000);
+
+feed(`<span class="liv-txt">Liverpool</span> captured <b>Kowdiar</b> from Arsenal 🚩`);
+feed(`<span class="gold-txt">Brazil</span> captured <b>Kazhakkoottam</b> (World Cup board)`);
+feed(`<span class="ars-txt">Arsenal</span> is attacking <b>Pattom</b>`);
+setTimeout(()=>toast('Welcome back, YNWA — Pattom is under attack ⚔'),4200);
+</script>
+</body>
+</html>
